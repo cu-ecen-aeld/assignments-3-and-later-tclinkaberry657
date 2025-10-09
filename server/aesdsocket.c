@@ -129,7 +129,8 @@ int main(int argc, char *argv[]) {
 
   struct sockaddr_storage client_addr;
   socklen_t addr_size;
-  struct addrinfo hints, *res = NULL;
+  struct addrinfo hints, *res;
+  res->ai_addr = NULL;
   int client_fd;
   char client_ip[IP_ADDR_LEN];
 
