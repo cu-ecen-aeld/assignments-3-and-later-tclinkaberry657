@@ -129,8 +129,7 @@ int main(int argc, char *argv[]) {
 
   struct sockaddr_storage client_addr;
   socklen_t addr_size;
-  struct addrinfo hints, *res;
-  res->ai_addr = NULL;
+  struct addrinfo hints, *res, *p;
   int client_fd;
   char client_ip[IP_ADDR_LEN];
 
@@ -145,21 +144,27 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (sock_fd == -1) {
-    syslog(LOG_ERR, "Failed opening socket: %s", strerror(errno));
-    freeaddrinfo(res);
-    return -1;
-  }
+  for (p = res; p != NULL; p = p->ai_next) {
 
-  if (bind(sock_fd, res->ai_addr, res->ai_addrlen) == -1) {
-    syslog(LOG_ERR, "Failed binding socket: %s", strerror(errno));
-    close(sock_fd);
-    freeaddrinfo(res);
-    return -1;
+    sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+    if (sock_fd == -1) {
+      syslog(LOG_ERR, "Failed opening socket: %s", strerror(errno));
+      continue;
+    }
+
+    if (bind(sock_fd, p->ai_addr, p->ai_addrlen) == -1) {
+      syslog(LOG_ERR, "binding socket: %s", strerror(errno));
+      close(sock_fd);
+      continue;
+    }
+    break;
   }
 
   freeaddrinfo(res);
+  if (p == NULL) {
+    syslog(LOG_ERR, "Failed binding to socket");
+    return -1;
+  }
 
   if (run_as_daemon) {
     start_daemon();
