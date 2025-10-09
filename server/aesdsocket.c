@@ -114,6 +114,7 @@ void start_daemon(void) {
 }
 
 int main(int argc, char *argv[]) {
+  remove(DATA_FILE);
   openlog("aesdsocket", LOG_PID, LOG_USER);
 
   int run_as_daemon = 0;
