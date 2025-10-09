@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <sys/syslog.h>
 #define _GNU_SOURCE
 #include <arpa/inet.h>
@@ -43,12 +44,18 @@
 #define AI_FLAGS AI_PASSIVE
 // #define AI_FAMILY AF_UNSPEC
 
+int sock_fd = -1;
 int shutdown_flag = 0;
+int waiting_for_connection = 0;
 
 void signal_handler(int sig) {
   if (sig == SIGINT || sig == SIGTERM) {
     syslog(LOG_INFO, "Caught signal, exiting: %d", sig);
     shutdown_flag = 1;
+    if (waiting_for_connection) {
+      close(sock_fd);
+      exit(0);
+    }
   }
 }
 
@@ -137,7 +144,7 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  int sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   if (sock_fd == -1) {
     syslog(LOG_ERR, "Failed opening socket: %s", strerror(errno));
     freeaddrinfo(res);
@@ -165,6 +172,7 @@ int main(int argc, char *argv[]) {
 
   while (!shutdown_flag) {
 
+    waiting_for_connection = 1;
     addr_size = sizeof(client_addr);
     client_fd = accept(sock_fd, (struct sockaddr *)&client_addr, &addr_size);
     if (client_fd == -1) {
@@ -172,6 +180,7 @@ int main(int argc, char *argv[]) {
       close(sock_fd);
       return -1;
     }
+    waiting_for_connection = 0;
 
 #ifdef IPV6
     struct sockaddr_in6 *ipv6_addr = (struct sockaddr_in6 *)&client_addr;
@@ -187,26 +196,53 @@ int main(int argc, char *argv[]) {
 
     syslog(LOG_INFO, "Accepted connection from %s", client_ip);
 
+    // Receive data
     ssize_t bytes_received;
-    char buf[BUF_SIZE] = {0};
-    while ((bytes_received = recv(client_fd, buf, sizeof(buf), 0)) > 0) {
-      buf[--bytes_received] = '\n';
-      int write_size = write_to_data_file(DATA_FILE, buf, bytes_received);
-      if (write_size == -1) {
-        syslog(LOG_ERR, "Error opening or writing to data file: %s",
-               strerror(errno));
+    size_t rec_size = 0;
+    char *rec_buf = NULL;
+    char buf[BUF_SIZE];
+    char *newline_pos = NULL;
+    while (!newline_pos) {
+      bytes_received = recv(client_fd, buf, BUF_SIZE, 0);
+      if (bytes_received == -1) {
+        syslog(LOG_ERR, "Error receiving data: %s", strerror(errno));
         close(sock_fd);
         close(client_fd);
         return -1;
       }
-      syslog(LOG_INFO, "Data received: %s", buf);
-      buf[0] = '\0';
-    }
-    if (bytes_received == -1) {
-      syslog(LOG_ERR, "Error receiving data: %s", strerror(errno));
-      close(sock_fd);
-      close(client_fd);
-      return -1;
+
+      char *temp_buf = realloc(rec_buf, rec_size + bytes_received + 1);
+      if (!temp_buf) {
+        syslog(LOG_ERR, "Error allocating memory for packet: %s",
+               strerror(errno));
+        free(rec_buf);
+        close(sock_fd);
+        close(client_fd);
+        return -1;
+      }
+      rec_buf = temp_buf;
+
+      memcpy(rec_buf + rec_size, buf, bytes_received);
+      rec_size += bytes_received;
+      rec_buf[rec_size] = '\0';
+
+      newline_pos = strchr(rec_buf, '\n');
+      if (newline_pos) {
+        ssize_t packet_size = newline_pos - rec_buf + 1;
+
+        int write_size = write_to_data_file(DATA_FILE, rec_buf, packet_size);
+        if (write_size == -1) {
+          syslog(LOG_ERR, "Error opening or writing to data file: %s",
+                 strerror(errno));
+          close(sock_fd);
+          close(client_fd);
+          return -1;
+        }
+
+        free(rec_buf);
+        rec_buf = NULL;
+        rec_size = 0;
+      }
     }
 
     int fd = open(DATA_FILE, O_RDONLY);
@@ -214,8 +250,10 @@ int main(int argc, char *argv[]) {
       syslog(LOG_ERR, "Error opening data file: %s", strerror(errno));
       close(sock_fd);
       close(client_fd);
+      free(rec_buf);
       return -1;
     }
+
     char send_buf[BUF_SIZE] = {0};
     ssize_t read_size;
     while ((read_size = read(fd, send_buf, BUF_SIZE)) > 0) {
@@ -232,7 +270,6 @@ int main(int argc, char *argv[]) {
         }
         total_bytes_sent += bytes_sent;
       }
-      send_buf[0] = '\0';
     }
     if (read_size == -1) {
       syslog(LOG_ERR, "Error reading data file: %s", strerror(errno));
@@ -242,6 +279,7 @@ int main(int argc, char *argv[]) {
       return -1;
     }
     close(fd);
+
     close(client_fd);
     syslog(LOG_INFO, "Closed connection from %s", client_ip);
   }
