@@ -52,6 +52,7 @@ void signal_handler(int sig) {
   if (sig == SIGINT || sig == SIGTERM) {
     syslog(LOG_INFO, "Caught signal, exiting: %d", sig);
     shutdown_flag = 1;
+    syslog(LOG_INFO, "Waiting for connection: %d", waiting_for_connection);
     if (waiting_for_connection) {
       close(sock_fd);
       exit(0);
@@ -145,6 +146,7 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
+  p = NULL;
   for (p = res; p != NULL; p = p->ai_next) {
 
     sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
@@ -290,6 +292,8 @@ int main(int argc, char *argv[]) {
     close(client_fd);
     syslog(LOG_INFO, "Closed connection from %s", client_ip);
   }
+
+  syslog(LOG_INFO, "Exiting Program");
   close(sock_fd);
   closelog();
   remove(DATA_FILE);
