@@ -1,3 +1,4 @@
+#include <asm-generic/socket.h>
 #include <stddef.h>
 #include <sys/syslog.h>
 #define _GNU_SOURCE
@@ -132,7 +133,7 @@ int main(int argc, char *argv[]) {
   struct sockaddr_storage client_addr;
   socklen_t addr_size;
   struct addrinfo hints, *res, *p;
-  int client_fd;
+  int client_fd, yes = 1;
   char client_ip[IP_ADDR_LEN];
 
   memset(&hints, 0, sizeof(hints));
@@ -146,12 +147,18 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  p = NULL;
   for (p = res; p != NULL; p = p->ai_next) {
 
     sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
     if (sock_fd == -1) {
       syslog(LOG_ERR, "Failed opening socket: %s", strerror(errno));
+      continue;
+    }
+
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) ==
+        -1) {
+      syslog(LOG_ERR, "Error setting socket option: %s", strerror(errno));
+      close(sock_fd);
       continue;
     }
 
@@ -166,6 +173,7 @@ int main(int argc, char *argv[]) {
   freeaddrinfo(res);
   if (p == NULL) {
     syslog(LOG_ERR, "Failed binding to socket");
+    close(sock_fd);
     return -1;
   }
 
