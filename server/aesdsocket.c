@@ -188,15 +188,9 @@ int main(int argc, char *argv[]) {
     syslog(LOG_INFO, "Accepted connection from %s", client_ip);
 
     ssize_t bytes_received;
-    char buf[BUF_SIZE];
+    char buf[BUF_SIZE] = {0};
     while ((bytes_received = recv(client_fd, buf, sizeof(buf), 0)) > 0) {
-
-      for (int i = 0; i < bytes_received; i++) {
-        if (buf[i] == '\n') {
-          bytes_received = i;
-          break;
-        }
-      }
+      buf[--bytes_received] = '\n';
       int write_size = write_to_data_file(DATA_FILE, buf, bytes_received);
       if (write_size == -1) {
         syslog(LOG_ERR, "Error opening or writing to data file: %s",
@@ -206,6 +200,7 @@ int main(int argc, char *argv[]) {
         return -1;
       }
       syslog(LOG_INFO, "Data received: %s", buf);
+      buf[0] = '\0';
     }
     if (bytes_received == -1) {
       syslog(LOG_ERR, "Error receiving data: %s", strerror(errno));
@@ -221,7 +216,7 @@ int main(int argc, char *argv[]) {
       close(client_fd);
       return -1;
     }
-    char send_buf[BUF_SIZE];
+    char send_buf[BUF_SIZE] = {0};
     ssize_t read_size;
     while ((read_size = read(fd, send_buf, BUF_SIZE)) > 0) {
       ssize_t total_bytes_sent = 0;
@@ -237,6 +232,7 @@ int main(int argc, char *argv[]) {
         }
         total_bytes_sent += bytes_sent;
       }
+      send_buf[0] = '\0';
     }
     if (read_size == -1) {
       syslog(LOG_ERR, "Error reading data file: %s", strerror(errno));
