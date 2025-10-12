@@ -13,7 +13,7 @@ OBJS = ${CFILES:.c=.o}
 all: ${TARGET}
 
 ${TARGET}: ${SOURCE}
-	${CC} ${CFLAGS} -o ${TARGET} ${SRCS} ${LDFLAGS}
+	${CC} ${CFLAGS} ${SRCS} -o ${TARGET} ${LDFLAGS}
 
 clean:
 	rm -f ${OBJS} ${TARGET}
