@@ -1,16 +1,19 @@
-#!/bin/bash
+#!/bin/sh
 
 DAEMON=/usr/bin/aesdsocket
 OPTIONS="-d"
 
-case $1 in
+case "$1" in
 start)
   echo "Starting daemon $DAEMON"
-  start-stop-daemon --start --quiet --pidfile /var/run/$DAEMON.pid --make-pidfile --background --exec $DAEMON $OPTIONS
+  start-stop-daemon -S -n aesdsocket -a $DAEMON -- $OPTIONS
   ;;
 stop)
   echo "Stopping daemon $DAEMON"
-  start-stop-daemon --stop --quiet --pidfile /var/run/$DAEMON.pid
+  start-stop-daemon -K -n aesdsocket
+  ;;
+*)
+  exit 1
   ;;
 esac
 
